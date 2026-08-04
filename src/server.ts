@@ -10,27 +10,35 @@ app.use(cors());
 // Serve frontend HTML from 'public' folder
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Helper function to extract filename from URL safely
-const getFilenameFromUrl = (fileUrl: string): string => {
+// Helper function to fetch real filename using HTTP HEAD request from headers
+const getFilenameFromHeaders = async (fileUrl: string): Promise<string> => {
   try {
-    const parsed = new URL(fileUrl);
+    // Send a lightweight HEAD request to get headers without downloading the file
+    const response = await fetch(fileUrl, { method: 'HEAD' });
+    const disposition = response.headers.get('content-disposition');
     
-    // 1. Check if content-disposition exists in query params (common for R2/S3 pre-signed URLs)
-    const disp = parsed.searchParams.get("response-content-disposition");
-    if (disp) {
-      const match = disp.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+    if (disposition) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
       if (match && match[1]) {
         return decodeURIComponent(match[1].replace(/['"]/g, ""));
       }
     }
-    
-    // 2. Fallback to the last part of the URL pathname
-    const pathname = parsed.pathname;
-    const basename = pathname.split('/').pop();
-    return basename ? decodeURIComponent(basename) : "media_file";
-  } catch {
-    return "media_file";
+  } catch (err) {
+    // Ignore network/head errors and fallback below
   }
+
+  // Fallback: If headers don't have it, extract cleanly from URL pathname
+  try {
+    const parsed = new URL(fileUrl);
+    const basename = parsed.pathname.split('/').pop();
+    if (basename) {
+      const decoded = decodeURIComponent(basename);
+      // Clean up any R2 random hashes if they are in the path filename
+      return decoded.replace(/^\d+-[a-zA-Z0-9]+-/, '');
+    }
+  } catch {}
+
+  return "media_file";
 };
 
 // API Endpoint to check media link
@@ -45,10 +53,10 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  // Extract filename beforehand using the helper
-  const extractedFileName = getFilenameFromUrl(url);
+  // 1. Get the actual filename from HEAD headers first
+  const extractedFileName = await getFilenameFromHeaders(url);
 
-  // Directly running ffprobe without forcing outdated static paths
+  // 2. Run ffprobe for technical metadata
   ffmpeg.ffprobe(url, (err, metadata) => {
     if (err) {
       res.status(400).json({
