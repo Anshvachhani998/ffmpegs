@@ -1,21 +1,7 @@
 import express, { Request, Response } from 'express';
 import ffmpeg from 'fluent-ffmpeg';
-
-// @ts-ignore
-import ffmpegStatic from 'ffmpeg-static';
-// @ts-ignore
-import ffprobeStatic from 'ffprobe-static';
-
 import cors from 'cors';
 import path from 'path';
-
-// Setup static paths for Render compatibility
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
-}
-if (ffprobeStatic && ffprobeStatic.path) {
-  ffmpeg.setFfprobePath(ffprobeStatic.path);
-}
 
 const app = express();
 app.use(express.json());
@@ -36,6 +22,7 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
     return;
   }
 
+  // Directly running ffprobe without forcing outdated static paths
   ffmpeg.ffprobe(url, (err, metadata) => {
     if (err) {
       res.status(400).json({
