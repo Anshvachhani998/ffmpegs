@@ -1,3 +1,5 @@
+declare module 'ffprobe-static';
+declare module 'ffmpeg-static';
 import express, { Request, Response } from 'express';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
