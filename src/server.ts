@@ -1,9 +1,11 @@
-declare module 'ffprobe-static';
-declare module 'ffmpeg-static';
 import express, { Request, Response } from 'express';
 import ffmpeg from 'fluent-ffmpeg';
+
+// @ts-ignore
 import ffmpegStatic from 'ffmpeg-static';
+// @ts-ignore
 import ffprobeStatic from 'ffprobe-static';
+
 import cors from 'cors';
 import path from 'path';
 
