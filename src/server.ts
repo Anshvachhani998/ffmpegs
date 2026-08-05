@@ -10,17 +10,24 @@ app.use(cors());
 // Serve frontend HTML from 'public' folder
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Helper function to fetch real filename using HTTP HEAD request from headers
-const getFilenameFromHeaders = async (fileUrl: string): Promise<string> => {
+// Helper function to fetch real filename and headers using HTTP HEAD request
+const getHeadersAndFilename = async (fileUrl: string): Promise<{ fileName: string; headers: Record<string, string> }> => {
+  const headersObj: Record<string, string> = {};
+  
   try {
-    // Send a lightweight HEAD request to get headers without downloading the file
     const response = await fetch(fileUrl, { method: 'HEAD' });
-    const disposition = response.headers.get('content-disposition');
     
+    // Saare headers ko object me store kar rahe hain
+    response.headers.forEach((value, key) => {
+      headersObj[key] = value;
+    });
+
+    const disposition = response.headers.get('content-disposition');
     if (disposition) {
       const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
       if (match && match[1]) {
-        return decodeURIComponent(match[1].replace(/['"]/g, ""));
+        const extracted = decodeURIComponent(match[1].replace(/['"]/g, ""));
+        return { fileName: extracted, headers: headersObj };
       }
     }
   } catch (err) {
@@ -28,20 +35,20 @@ const getFilenameFromHeaders = async (fileUrl: string): Promise<string> => {
   }
 
   // Fallback: If headers don't have it, extract cleanly from URL pathname
+  let fallbackName = "media_file";
   try {
     const parsed = new URL(fileUrl);
     const basename = parsed.pathname.split('/').pop();
     if (basename) {
       const decoded = decodeURIComponent(basename);
-      // Clean up any R2 random hashes if they are in the path filename
-      return decoded.replace(/^\d+-[a-zA-Z0-9]+-/, '');
+      fallbackName = decoded.replace(/^\d+-[a-zA-Z0-9]+-/, '');
     }
   } catch {}
 
-  return "media_file";
+  return { fileName: fallbackName, headers: headersObj };
 };
 
-// API Endpoint to check media link
+// API Endpoint to check media link & return headers
 app.post('/api/check-media', async (req: Request, res: Response): Promise<void> => {
   const { url } = req.body;
 
@@ -53,36 +60,29 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  // 1. Get the actual filename from HEAD headers first
-  const extractedFileName = await getFilenameFromHeaders(url);
+  // 1. Fetch headers and filename via HEAD request
+  const { fileName, headers } = await getHeadersAndFilename(url);
 
-  // 2. Run ffprobe for technical metadata
-  ffmpeg.ffprobe(url, (err, metadata) => {
+  // 2. Optional: ffprobe check bas ye dekhne ke liye ki link valid hai ya nahi
+  ffmpeg.ffprobe(url, (err) => {
     if (err) {
       res.status(400).json({
         success: false,
         downloadable: false,
-        fileName: extractedFileName,
+        fileName: fileName,
+        headers: headers,
         error: 'Link is invalid, expired, or not accessible.',
         details: err.message
       });
       return;
     }
 
+    // Sirf fileName aur Headers response me bhej rahe hain
     res.json({
       success: true,
       downloadable: true,
-      fileName: extractedFileName,
-      formatName: metadata.format.format_name,
-      durationSeconds: metadata.format.duration,
-      fileSize: metadata.format.size || 'Unknown',
-      bitrate: metadata.format.bit_rate,
-      streams: metadata.streams.map((stream: any) => ({
-        type: stream.codec_type,
-        codec: stream.codec_name,
-        resolution: stream.width && stream.height ? `${stream.width}x${stream.height}` : null,
-        sampleRate: stream.sample_rate || null
-      }))
+      fileName: fileName,
+      headers: headers
     });
   });
 });
