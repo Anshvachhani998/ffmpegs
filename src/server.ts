@@ -47,7 +47,7 @@ const getHeadersAndFilename = async (fileUrl: string): Promise<{ fileName: strin
   return { fileName: fallbackName, headers: headersObj };
 };
 
-// API Endpoint to check media link, return headers, and detect codecs
+// API Endpoint to check media link, return headers, and detect audio tracks
 app.post('/api/check-media', async (req: Request, res: Response): Promise<void> => {
   const { url } = req.body;
 
@@ -62,7 +62,7 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
   // 1. Fetch headers and filename via HEAD request
   const { fileName, headers } = await getHeadersAndFilename(url);
 
-  // 2. Use ffprobe to check validity and extract streams (audio/video codecs)
+  // 2. Use ffprobe to check validity and extract audio tracks
   ffmpeg.ffprobe(url, (err, metadata) => {
     if (err) {
       res.status(400).json({
@@ -76,23 +76,33 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Extracting audio and video codecs from metadata streams
-    const audioCodecs = metadata.streams
+    // Audio tracks extract kar rahe hain (Language aur Title ke sath)
+    const audioTracks = metadata.streams
       .filter((stream) => stream.codec_type === 'audio')
-      .map((stream) => stream.codec_name);
+      .map((stream, index) => {
+        return {
+          trackId: stream.index,
+          codec: stream.codec_name,
+          language: stream.tags?.language || 'Unknown', // e.g., 'hin', 'eng'
+          title: stream.tags?.title || `Track ${index + 1}`,
+          channels: stream.channels // 2 for stereo, 6 for 5.1, etc.
+        };
+      });
 
-    const videoCodecs = metadata.streams
+    // Video information bhi nikal lete hain (Optional)
+    const videoTracks = metadata.streams
       .filter((stream) => stream.codec_type === 'video')
       .map((stream) => stream.codec_name);
 
-    // Response with codecs included
+    // Response with detailed audio tracks included
     res.json({
       success: true,
       downloadable: true,
       fileName: fileName,
-      codecs: {
-        audio: audioCodecs, // e.g., ['aac', 'mp3']
-        video: videoCodecs  // e.g., ['h264', 'vp9']
+      mediaInfo: {
+        totalAudioTracks: audioTracks.length,
+        audioTracks: audioTracks,
+        videoCodecs: videoTracks
       },
       headers: headers
     });
