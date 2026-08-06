@@ -17,7 +17,6 @@ const getHeadersAndFilename = async (fileUrl: string): Promise<{ fileName: strin
   try {
     const response = await fetch(fileUrl, { method: 'HEAD' });
     
-    // Saare headers ko object me store kar rahe hain
     response.headers.forEach((value, key) => {
       headersObj[key] = value;
     });
@@ -48,7 +47,7 @@ const getHeadersAndFilename = async (fileUrl: string): Promise<{ fileName: strin
   return { fileName: fallbackName, headers: headersObj };
 };
 
-// API Endpoint to check media link & return headers
+// API Endpoint to check media link, return headers, and detect codecs
 app.post('/api/check-media', async (req: Request, res: Response): Promise<void> => {
   const { url } = req.body;
 
@@ -63,8 +62,8 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
   // 1. Fetch headers and filename via HEAD request
   const { fileName, headers } = await getHeadersAndFilename(url);
 
-  // 2. Optional: ffprobe check bas ye dekhne ke liye ki link valid hai ya nahi
-  ffmpeg.ffprobe(url, (err) => {
+  // 2. Use ffprobe to check validity and extract streams (audio/video codecs)
+  ffmpeg.ffprobe(url, (err, metadata) => {
     if (err) {
       res.status(400).json({
         success: false,
@@ -77,11 +76,24 @@ app.post('/api/check-media', async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Sirf fileName aur Headers response me bhej rahe hain
+    // Extracting audio and video codecs from metadata streams
+    const audioCodecs = metadata.streams
+      .filter((stream) => stream.codec_type === 'audio')
+      .map((stream) => stream.codec_name);
+
+    const videoCodecs = metadata.streams
+      .filter((stream) => stream.codec_type === 'video')
+      .map((stream) => stream.codec_name);
+
+    // Response with codecs included
     res.json({
       success: true,
       downloadable: true,
       fileName: fileName,
+      codecs: {
+        audio: audioCodecs, // e.g., ['aac', 'mp3']
+        video: videoCodecs  // e.g., ['h264', 'vp9']
+      },
       headers: headers
     });
   });
